@@ -41,10 +41,12 @@ except ImportError:
 # Optionally, create and import modules you wrote.
 # Please refrain from importing large or unstable 3rd party packages.
 try:
-    import example_custom_utils as ecu
+    from ek_controller_config import EkControllerConfig
+    from ek_controller_impl import EkControllerImpl
 except ImportError:
     # PyTest import.
-    from . import example_custom_utils as ecu
+    from .ek_controller_config import EkControllerConfig
+    from .ek_controller_impl import EkControllerImpl
 
 #########################
 # REPLACE THIS (END) ####
@@ -109,51 +111,34 @@ class Controller():
         # REPLACE THIS (START) ##
         #########################
 
-        # Call a function in module `example_custom_utils`.
-        ecu.exampleFunction()
+        self._latest_timestamp_seen = 0.0
 
-        # Example: hardcode waypoints through the gates.
-        if use_firmware:
-            waypoints = [(self.initial_obs[0], self.initial_obs[2], initial_info["gate_dimensions"]["tall"]["height"])]  # Height is hardcoded scenario knowledge.
-        else:
-            waypoints = [(self.initial_obs[0], self.initial_obs[2], self.initial_obs[4])]
-        for idx, g in enumerate(self.NOMINAL_GATES):
-            height = initial_info["gate_dimensions"]["tall"]["height"] if g[6] == 0 else initial_info["gate_dimensions"]["low"]["height"]
-            if g[5] > 0.75 or g[5] < 0:
-                if idx == 2:  # Hardcoded scenario knowledge (direction in which to take gate 2).
-                    waypoints.append((g[0]+0.3, g[1]-0.3, height))
-                    waypoints.append((g[0]-0.3, g[1]-0.3, height))
-                else:
-                    waypoints.append((g[0]-0.3, g[1], height))
-                    waypoints.append((g[0]+0.3, g[1], height))
-            else:
-                if idx == 3:  # Hardcoded scenario knowledge (correct how to take gate 3).
-                    waypoints.append((g[0]+0.1, g[1]-0.3, height))
-                    waypoints.append((g[0]+0.1, g[1]+0.3, height))
-                else:
-                    waypoints.append((g[0], g[1]-0.3, height))
-                    waypoints.append((g[0], g[1]+0.3, height))
-        waypoints.append([initial_info["x_reference"][0], initial_info["x_reference"][2], initial_info["x_reference"][4]])
+        ek_config = EkControllerConfig(
+            ctrl_timestep=initial_info["ctrl_timestep"],
+            ctrl_freq=initial_info["ctrl_freq"],
+            use_firmware=use_firmware,
+            initial_obs=initial_obs,
+            gate_dimensions=initial_info["gate_dimensions"],
+            obstacle_dimensions=initial_info["obstacle_dimensions"],
+            nominal_gates_pose_and_type=initial_info["nominal_gates_pos_and_type"],
+            nominal_obstacles_pos=initial_info["nominal_obstacles_pos"],
+            x_reference=initial_info["x_reference"],
+            mass=initial_info["nominal_physical_parameters"]["quadrotor_mass"],
+            ixx=initial_info["nominal_physical_parameters"]["quadrotor_ixx_inertia"],
+            iyy=initial_info["nominal_physical_parameters"]["quadrotor_iyy_inertia"],
+            izz=initial_info["nominal_physical_parameters"]["quadrotor_izz_inertia"],
+        )
 
-        # Polynomial fit.
-        self.waypoints = np.array(waypoints)
-        deg = 6
-        t = np.arange(self.waypoints.shape[0])
-        fx = np.poly1d(np.polyfit(t, self.waypoints[:,0], deg))
-        fy = np.poly1d(np.polyfit(t, self.waypoints[:,1], deg))
-        fz = np.poly1d(np.polyfit(t, self.waypoints[:,2], deg))
-        duration = 15
-        t_scaled = np.linspace(t[0], t[-1], int(duration*self.CTRL_FREQ))
-        self.ref_x = fx(t_scaled)
-        self.ref_y = fy(t_scaled)
-        self.ref_z = fz(t_scaled)
+        self._ek_controller_impl = EkControllerImpl(ek_config)
 
-        if self.VERBOSE:
-            # Plot trajectory in each dimension and 3D.
-            plot_trajectory(t_scaled, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
+        # Draw the trajectory on PyBullet's GUI
+        waypoints_arg, waypoints_pos = self._ek_controller_impl.get_waypoints()
 
-            # Draw the trajectory on PyBullet's GUI.
-            draw_trajectory(initial_info, self.waypoints, self.ref_x, self.ref_y, self.ref_z)
+        self.ref_x, self.ref_y, self.ref_z = self._ek_controller_impl.get_reference_trajectory()
+        draw_trajectory(initial_info, waypoints_pos, self.ref_x, self.ref_y, self.ref_z)
+
+        # Saved to be able to draw paths for later sessions
+        self._initial_info = initial_info
 
         #########################
         # REPLACE THIS (END) ####
@@ -194,64 +179,21 @@ class Controller():
         # REPLACE THIS (START) ##
         #########################
 
-        # Handwritten solution for GitHub's getting_stated scenario.
+        if time < self._latest_timestamp_seen:
+            self._ek_controller_impl.reset_episode()
 
-        if iteration == 0:
-            height = 1
-            duration = 2
+            # Enable to debug the planning paths
+            # waypoints_arg, waypoints_pos = self._ek_controller_impl.get_waypoints()
+            # self.ref_x, self.ref_y, self.ref_z = self._ek_controller_impl.get_reference_trajectory()
+            # draw_trajectory(self._initial_info, waypoints_pos, self.ref_x, self.ref_y, self.ref_z)
 
-            command_type = Command(2)  # Take-off.
-            args = [height, duration]
+        self._latest_timestamp_seen = time
 
-        elif iteration >= 3*self.CTRL_FREQ and iteration < 20*self.CTRL_FREQ:
-            step = min(iteration-3*self.CTRL_FREQ, len(self.ref_x) -1)
-            target_pos = np.array([self.ref_x[step], self.ref_y[step], self.ref_z[step]])
-            target_vel = np.zeros(3)
-            target_acc = np.zeros(3)
-            target_yaw = 0.
-            target_rpy_rates = np.zeros(3)
-
-            command_type = Command(1)  # cmdFullState.
-            args = [target_pos, target_vel, target_acc, target_yaw, target_rpy_rates]
-
-        elif iteration == 20*self.CTRL_FREQ:
-            command_type = Command(6)  # Notify setpoint stop.
-            args = []
-
-        elif iteration == 20*self.CTRL_FREQ+1:
-            x = self.ref_x[-1]
-            y = self.ref_y[-1]
-            z = 1.5 
-            yaw = 0.
-            duration = 2.5
-
-            command_type = Command(5)  # goTo.
-            args = [[x, y, z], yaw, duration, False]
-
-        elif iteration == 23*self.CTRL_FREQ:
-            x = self.initial_obs[0]
-            y = self.initial_obs[2]
-            z = 1.5
-            yaw = 0.
-            duration = 6
-
-            command_type = Command(5)  # goTo.
-            args = [[x, y, z], yaw, duration, False]
-
-        elif iteration == 30*self.CTRL_FREQ:
-            height = 0.
-            duration = 3
-
-            command_type = Command(3)  # Land.
-            args = [height, duration]
-
-        elif iteration == 33*self.CTRL_FREQ-1:
-            command_type = Command(-1)  # Terminate command to be sent once the trajectory is completed.
-            args = []
-
-        else:
-            command_type = Command(0)  # None.
-            args = []
+        command_type, args = self._ek_controller_impl.cmd_firmware_impl(
+            time=time,
+            obs=obs,
+            info=info,
+            iteration=iteration)
 
         #########################
         # REPLACE THIS (END) ####
@@ -355,11 +297,10 @@ class Controller():
         # REPLACE THIS (START) ##
         #########################
 
-        _ = self.action_buffer
-        _ = self.obs_buffer
-        _ = self.reward_buffer
-        _ = self.done_buffer
-        _ = self.info_buffer
+        info_buffer = self.info_buffer
+
+        latest_info_buffer = info_buffer[-1]
+        self._ek_controller_impl.learn_from_episode(latest_info_buffer)
 
         #########################
         # REPLACE THIS (END) ####
