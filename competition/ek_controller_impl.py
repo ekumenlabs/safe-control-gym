@@ -53,7 +53,8 @@ class EkControllerImpl:
 
         self._rate_estimator = RateEstimator(self._dt)
 
-        self._risk_adviser = RiskAdviser()
+        # No path recompilation for us this round
+        self._risk_adviser = RiskAdviser(forced_conservative_mode = True)
 
         self._start_pos = (
             self._config.initial_obs[0],

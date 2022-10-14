@@ -30,13 +30,17 @@ class RiskProfile(Enum):
 
 class RiskAdviser():
 
-    def __init__(self):
+    def __init__(self, forced_conservative_mode=False):
+        self._forced_conservative_mode = forced_conservative_mode
         self._episode_count = 1
         self._episodes_completed = []
         self._priori_gate_locations = []
         self._exact_gate_locations = []
 
     def episode_advice(self):
+        if self._forced_conservative_mode:
+            return self._pack_advise(RiskProfile.CONSERVATIVE)
+
         if self._episode_count == 1:
             # we're still collecting data
             return self._pack_advise(RiskProfile.CONSERVATIVE)
@@ -171,8 +175,8 @@ if __name__ == '__main__':
     assert (RiskAdviser._gate_data_is_eq(gate_data_4, {}) == False)
     assert (RiskAdviser._gate_data_is_eq(gate_data_4, {}) == False)
 
-    def run_test_case(episode_results):
-        uut = RiskAdviser()
+    def run_test_case(episode_results, forced_conservative_mode=False):
+        uut = RiskAdviser(forced_conservative_mode=forced_conservative_mode)
         advice = []
         for results in episode_results:
             advice.append(uut.episode_advice())
@@ -280,5 +284,38 @@ if __name__ == '__main__':
         assert (RiskAdviser._gate_data_is_eq(g_hints[2], {}) == True)
         assert (RiskAdviser._gate_data_is_eq(g_hints[3], {}) == True)
     test_case_level3()
+
+    def test_case_level2_but_chill():
+        results = run_test_case(
+            [
+                (True, gate_data_1, gate_data_2),
+                (True, gate_data_1, gate_data_2),
+                (True, gate_data_1, gate_data_2),
+                (True, gate_data_1, gate_data_2),
+                (True, gate_data_1, gate_data_2),
+                (True, gate_data_1, gate_data_2),
+                (True, gate_data_1, gate_data_2),
+                (True, gate_data_1, gate_data_2),
+            ],
+            forced_conservative_mode=True
+        )
+        advice, g_hints = zip(*results)
+        assert (advice[0] == RiskProfile.CONSERVATIVE)
+        assert (advice[1] == RiskProfile.CONSERVATIVE)
+        assert (advice[2] == RiskProfile.CONSERVATIVE)
+        assert (advice[3] == RiskProfile.CONSERVATIVE)
+        assert (advice[4] == RiskProfile.CONSERVATIVE)
+        assert (advice[5] == RiskProfile.CONSERVATIVE)
+        assert (advice[6] == RiskProfile.CONSERVATIVE)
+        assert (advice[7] == RiskProfile.CONSERVATIVE)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[0], {}) == True)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[1], {}) == True)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[2], {}) == True)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[3], {}) == True)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[4], {}) == True)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[5], {}) == True)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[6], {}) == True)
+        assert (RiskAdviser._gate_data_is_eq(g_hints[7], {}) == True)
+    test_case_level2_but_chill()
 
     print("Tests are OK!!!!")
