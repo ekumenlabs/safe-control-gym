@@ -35,26 +35,37 @@ def fastpolytrim(p, tol=1e-16):
     return p[:i + 1]
 
 def fastpolyadd(p, q):
-    if len(p) < len(q):
+    np = len(p)
+    nq = len(q)
+    if np < nq:
         p, q = q, p
-    r = tuple(p[i] + q[i] for i in range(len(q)))
-    if len(p) > len(q):
-        r += tuple(p[len(q):])
-    return fastpolytrim(r)
+        np, nq = nq, np
+    r = tuple(p[i] + q[i] for i in range(nq))
+    if np > nq:
+        r += tuple(p[nq:])
+    else:
+        r = fastpolytrim(r)
+    return r
 
 def fastpolyneg(p):
     return tuple(-pv for pv in p)
 
 def fastpolymul(p, q):
-    if len(p) < len(q):
+    np = len(p)
+    nq = len(q)
+    if np < nq:
         p, q = q, p
+        np, nq = nq, np
+    if nq == 1:
+        r = tuple(p[i] * q[0] for i in range(np))
+        return fastpolytrim(r)
     r = (0,)
-    for i in reversed(range(len(p))):
-        s = tuple(p[i] * q[j] for j in range(len(q)))
+    for i in reversed(range(np)):
+        s = tuple(p[i] * q[j] for j in range(nq))
         if i > 0:
             s = (0,) * i + s
         r = fastpolyadd(s, r)
-    return fastpolytrim(r)
+    return r
 
 def fastpolypow(p, n):
     r = (1,)
