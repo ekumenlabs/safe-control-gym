@@ -63,7 +63,7 @@ class MPCCController():
         def deg_to_rad(d): return d * 2 * m.pi / 180.0
 
         self.MPCC_CONTOUR_ERROR_GAUSSIAN_SIGMA = 0.4  # m
-        self.MPCC_GATEWAY_CORRECTION_PATCH_SIGMA = 1.0  # m
+        self.MPCC_GATEWAY_CORRECTION_PATCH_SIGMA = 0.4  # m
 
         self.MPCC_SPEED_BUMP_K = 5.0  # unit-less gain
         self.MPCC_SPEED_BUMP_TRESHOLD = 1.2  # m/s
