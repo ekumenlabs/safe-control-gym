@@ -183,8 +183,8 @@ class EkControllerImpl:
             )
 
         assert self._config.obstacle_dimensions["shape"] == "cylinder"
-        obstacle_height = self._config.obstacle_dimensions["height"]
-        obstacle_radius = self._config.obstacle_dimensions["radius"]
+        obstacle_height = self._config.obstacle_dimensions["height"] + 0.3 # safety margin
+        obstacle_radius = self._config.obstacle_dimensions["radius"] + 0.3 # safety margin
 
         obstacles = []
         for obstacle in self._config.nominal_obstacles_pos:
@@ -202,12 +202,12 @@ class EkControllerImpl:
                 velocity=np.zeros(3)),
             gate_poses=list(map(to_pose, gates)),
             acceleration_limits=Limits(
-                lower=-1 * np.ones(3),
-                upper=1 * np.ones(3),
+                lower=-0.5 * np.ones(3),
+                upper=0.5 * np.ones(3),
             ),
             velocity_limits=Limits(
                 lower=np.array([0.05, -np.pi/6, -np.pi/6]),
-                upper=np.array([2.00, np.pi/6, np.pi/6]),
+                upper=np.array([1.5, np.pi/6, np.pi/6]),
             ),
             num_cone_samples=3,
             obstacles=obstacles,
