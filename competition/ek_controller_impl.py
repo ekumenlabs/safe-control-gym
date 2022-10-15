@@ -287,7 +287,9 @@ class EkControllerImpl:
             actual = self._gate_corrected_poses[id]
             gate_correction = np.array(
                 actual[0:3]) - np.array(nominal[0:3])
-            return gate_correction
+            gate_correction_size = np.linalg.norm(gate_correction)
+            if gate_correction_size > 0.1:
+                return gate_correction * (1 - 0.1 / gate_correction_size)
         return np.zeros(3)
 
     def _build_flight_sequence(self, waypoints_arg, waypoints_pos, landmarks):

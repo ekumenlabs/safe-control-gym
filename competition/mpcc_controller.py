@@ -63,7 +63,7 @@ class MPCCController():
         def deg_to_rad(d): return d * 2 * m.pi / 180.0
 
         self.MPCC_CONTOUR_ERROR_GAUSSIAN_SIGMA = 0.4  # m
-        self.MPCC_GATEWAY_CORRECTION_PATCH_SIGMA = 0.4  # m
+        self.MPCC_GATEWAY_CORRECTION_PATCH_SIGMA = 0.75  # m
 
         self.MPCC_SPEED_BUMP_K = 5.0  # unit-less gain
         self.MPCC_SPEED_BUMP_TRESHOLD = 1.2  # m/s
@@ -73,13 +73,13 @@ class MPCCController():
         self.MPCC_LAG_ERROR_WEIGHT = 45.0
         self.MPCC_CONTOUR_ERROR_WEIGHT_MAX = 45.0
         self.MPCC_CONTOUR_ERROR_WEIGHT_MIN = 25.0
-        self.MPCC_BODY_ORIENTATION_RATE_WEIGHT_DIAG = 1.4
+        self.MPCC_BODY_ORIENTATION_RATE_WEIGHT_DIAG = 0.8
         self.MPCC_CONTOUR_RATE_CHANGE_WEIGHT = 0.08
         self.MPCC_RATE_BOUNDED_THRUST_WEIGHT = 0.001
 
         self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MAX_MODULE = 0.8  # N
         self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MIN_MODULE = 0.1  # N
-        self.MPCC_CONSTRAINT_MAX_INCLINATION_MODULE = deg_to_rad(60)  # deg
+        self.MPCC_CONSTRAINT_MAX_INCLINATION_MODULE = deg_to_rad(30)  # deg
         self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE = \
             deg_to_rad(270)  # deg/sec
         self.MPCC_CONSTRAINT_CONTOUR_PARAM_VEL_MAX = 1.8  # m/s
