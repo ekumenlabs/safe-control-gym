@@ -22,7 +22,9 @@ Our submission uses the `networkx` python module.
 
 We've added this dependency in the `pyproject.toml` file, so executing
 
-> pip install -e .
+```
+pip install -e .
+```
 
 in the `safe-control-gym` folder of our fork should be enough to install this dependency.
 
@@ -32,8 +34,10 @@ The compilation stage of MPCC will also require a working `gcc` or `clang` insta
 
 To run our submission, the following commands should be enough.
 
-> cd competition/
-> python3 getting_started.py --overrides level0.yaml
-> python3 getting_started.py --overrides level1.yaml
-> python3 getting_started.py --overrides level2.yaml
-> python3 getting_started.py --overrides level3.yaml
+```
+cd competition/
+python3 getting_started.py --overrides level0.yaml
+python3 getting_started.py --overrides level1.yaml
+python3 getting_started.py --overrides level2.yaml
+python3 getting_started.py --overrides level3.yaml
+```
