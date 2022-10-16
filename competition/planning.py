@@ -22,6 +22,7 @@ import collections
 from abc import ABC, abstractmethod
 from typing import List, NamedTuple, Optional, Tuple
 
+import math
 import numpy as np
 import networkx as nx
 from scipy.spatial.transform import Rotation
@@ -68,8 +69,8 @@ def cartesian2spherical(vector):
 def real_roots(a, b, c):
     r = b * b - 4. * a * c
     if r < 0:
-        return np.array([])
-    return (-b + np.sqrt(r) * np.array([-1., 1.])) / (2. * a)
+        return ()
+    return (-b + math.sqrt(r)) / (2 * a), (-b - math.sqrt(r)) / (2 * a)
 
 
 def scalar_pmm_bang_bang_control_policy_time(p0, v0, p2, v2, u0, u2):
@@ -108,15 +109,16 @@ def scalar_pmm_bang_bang_control_policy_time(p0, v0, p2, v2, u0, u2):
     b = v0 * (1 - gamma)
     c = beta * (v2 + v0) / 2. + (p0 - p2)
 
-    t1 = real_roots(a, b, c)
-    if t1.size == 0:
-        return np.inf
-    t1 = t1[t1 >= 0]
-    T = (1 - gamma) * t1 + beta
-    T = T[T >= t1]
-    if T.size == 0:
-        return np.inf
-    return np.max(T).item()
+    Tmin = np.inf
+    for t1 in real_roots(a, b, c):
+        if t1 < 0:
+            continue
+        T = (1 - gamma) * t1 + beta
+        if T < t1:
+            continue
+        if T < Tmin:
+            Tmin = T
+    return Tmin
 
 
 def pmm_bang_bang_control_policy_minimum_time(p0, v0, p2, v2, u_lower, u_upper):
@@ -132,16 +134,13 @@ def pmm_bang_bang_control_policy_minimum_time(p0, v0, p2, v2, u_lower, u_upper):
 
 
 def balance_sum(c, a, b, epsilon=1e-14):
-    a = np.array(a)
-    b = np.array(b)
-    a_zeros = np.abs(a) < epsilon
-    b_zeros = np.abs(b) < epsilon
-    a[a_zeros] = 0
-    b[a_zeros] = c
-    a[b_zeros] = c
-    b[b_zeros] = 0
+    if abs(a) < epsilon:
+        a = 0
+        b = c
+    elif abs(b) < epsilon:
+        b = 0
+        a = c
     return a, b
-
 
 def scalar_pmm_bang_bang_control_policy(p0, v0, p2, v2, u_lower, u_upper, T):
     assert u_upper != 0
@@ -152,18 +151,21 @@ def scalar_pmm_bang_bang_control_policy(p0, v0, p2, v2, u_lower, u_upper, T):
     b = v0 * T - (u_lower * beta * T) / (1 - gamma) + (p0 - p2)
     c = ((u_upper * beta**2) / 2) / (1 - gamma)
 
-    alphas = real_roots(a, b, c)
-    alphas = alphas[alphas != 0]
-    if alphas.size == 0:
-        return T, 0
-    t1s = (T - beta / alphas) / (1 - gamma)
-    t1s, t2s = balance_sum(T, t1s, T - t1s)
-    alphas = alphas[np.logical_and(t1s >= 0, t2s >= 0)]
-    alpha = alphas[np.argmax(np.abs(alphas))].item()
-    t1 = (T - beta / alpha) / (1 - gamma)
+    max_alpha = 0
+    for alpha in real_roots(a, b, c):
+        if alpha == 0.:
+            continue
+        t1 = (T - beta / alpha) / (1 - gamma)
+        t1, t2 = balance_sum(T, t1, T - t1)
+        if t1 < 0 or t2 < 0:
+            continue
+        if abs(alpha) > abs(max_alpha):
+            max_alpha = alpha
+    if max_alpha == 0:
+        return T, max_alpha
+    t1 = (T - beta / max_alpha) / (1 - gamma)
     t1, t2 = balance_sum(T, t1, T - t1)
-    return t1, alpha
-
+    return t1, max_alpha
 
 def pmm_bang_bang_control_policy(p0, v0, p2, v2, u_lower, u_upper, T):
     t1, alpha = np.array([
@@ -281,18 +283,6 @@ def plan_pmm_time_optimal_trajectory(
                 )
                 if not trajectory:
                     continue
-                if obstacles:
-                    in_collision = False
-                    for obstacle in obstacles:
-                        time, point, distance = \
-                            obstacle.closest_point(trajectory)
-                        if distance <= 0:
-                            in_collision = True
-                            break
-                        if distance < safe_obstacle_distance:
-                            trajectory.add_landmark('obstacle', time)
-                    if in_collision:
-                        continue
                 states[i][k] = next_state
                 if i > 1:  # first trajectory segment starts from initial state
                     trajectory.add_landmark('waypoint', trajectory.start_time)
@@ -300,14 +290,33 @@ def plan_pmm_time_optimal_trajectory(
                     trajectory.add_landmark('waypoint', trajectory.end_time)
                 state_graph.add_edge((i - 1, j), (i, k), trajectory=trajectory)
 
-    shortest_path_nodes = nx.shortest_path(
-        state_graph, (0, 0), (len(regions), 0),
-        weight=lambda u, v, d: d['trajectory'].duration)
-    shortest_path_edges = zip(shortest_path_nodes[:-1], shortest_path_nodes[1:])
+    in_collision = True
+    while in_collision:
+        shortest_path_nodes = nx.shortest_path(
+            state_graph, (0, 0), (len(regions), 0),
+            weight=lambda u, v, d: d['trajectory'].duration)
+        shortest_path_edges = list(zip(
+            shortest_path_nodes[:-1], shortest_path_nodes[1:]))
+        if obstacles:
+            for u, v in shortest_path_edges:
+                trajectory = state_graph[u][v]['trajectory']
+                for obstacle in obstacles:
+                    time, point, distance = \
+                        obstacle.closest_point(trajectory)
+                    if distance <= 0:
+                        state_graph.remove_edge(u, v)
+                        break
+                    if distance < safe_obstacle_distance:
+                        trajectory.add_landmark('obstacle', time)
+                if distance <= 0:
+                    break
+            else:
+                in_collision = False
+        else:
+            in_collision = False
     trajectory = PiecewiseTrajectory([
         state_graph[u][v]['trajectory'] for u, v in shortest_path_edges])
     relevant_states = [states[i][j] for i, j in shortest_path_nodes]
-
     return relevant_states, trajectory
 
 
