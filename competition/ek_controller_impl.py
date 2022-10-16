@@ -291,13 +291,13 @@ class EkControllerImpl:
         return np.zeros(3)
 
     def _build_flight_sequence(self, waypoints_arg, waypoints_pos, landmarks):
-        take_off_duration = 1.0
+        take_off_duration = 2.0
         take_off_height = self._take_off_height
 
         # Duration time to stop the drone and stabilize it in the goal position
         # The evaluation script will stop execution once it detects the drone
         # has been stable for 2 seconds
-        stop_duration = 3.0
+        stop_duration = 2.0
         land_duration = 2.0
 
         # Build stage sequencer
