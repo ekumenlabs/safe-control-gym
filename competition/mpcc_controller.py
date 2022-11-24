@@ -22,6 +22,8 @@ import casadi as cs
 import math as m
 import numpy as np
 
+from acados_template import AcadosModel
+
 from typing import Dict, Any
 
 from safe_control_gym.math_and_models.transformations import csRotXYZ
@@ -202,6 +204,8 @@ class MPCCController():
         # dynamic function f(X, U)
         X_dot = cs.vertcat(pos_dot, pos_ddot, ang_dot[0:2], rate_dot[0:2])
 
+        self.X_dot_model = cs.vertcat(pos_dot, pos_ddot, ang_dot[0:2], rate_dot[0:2])
+
         continuous_system_model_function = cs.Function(
             'continuous_system_model_function', [X, U], [X_dot], ['X', 'U'], ['X_dot'])
 
@@ -302,6 +306,8 @@ class MPCCController():
         X_next = cs.vertcat(rate_bounded_thrust_next,
                             contour_pos_next, contour_vel_next)
 
+        # self.X_dot_model = cs.vertcat(rate_bounded_thrust_next, contour_pos_next, contour_pos_next)
+
         # state and input vectors
         X = cs.vertcat(rate_bounded_thrust,
                        contour_param_pos, contour_param_vel)
@@ -314,6 +320,7 @@ class MPCCController():
             'X_next_function', [X, U], [X_next, rate_bounded_thrust], ['X', 'U'], ['X_next', 'rate_bounded_thrust'])
 
         return extended_mpcc_function.expand()
+
 
     def _build_mpcc_cost_term_function(self):
         """
@@ -558,11 +565,22 @@ class MPCCController():
 
         X_next = cs.vertcat(model_xnext, mpcc_xnext)
 
-        #
-        # Build reusable function
-
-        return cs.Function(
+        full_mpcc_function = cs.Function(
             'full_mpcc_system_function', [X, U], [X_next, X], ['X', 'U'], ['X_next', 'X']).expand()
+
+        self._generate_acados_model(X, U, full_mpcc_function)
+
+        return full_mpcc_function
+
+    def _generate_acados_model(self, X, U, discrete_system_model_fn):
+        self.model = AcadosModel()
+        f_disc = discrete_system_model_fn(X, U)
+        self.model.f_disc_exp = f_disc
+        self.model.x = X
+        self.model.xdot = self.X_dot_model
+        self.model.u = U
+        self.model.z = []
+        self.model.p = []
 
     def _split_actions(self, x_next):
         """
@@ -615,6 +633,9 @@ class MPCCController():
         full_system_input_vector_len = self.mpcc_full_system_xnext_function.size1_in(
             "U")
 
+        #========================>  To get the model use
+        # self.model
+
         horizon_len = self.MPCC_HORIZON_LEN
 
         # Define optimizer and variables.
@@ -644,7 +665,7 @@ class MPCCController():
                 self.u_var[:, k], [0, 4, full_system_input_vector_len])
             interpolant_functions_sym = self.interpolant_functions(
                 theta=contour_param_pos,
-             )
+            )
             contour_curve = interpolant_functions_sym["contour_curve"]
             contour_tangent = interpolant_functions_sym["contour_tangent"]
             contour_error_functions_sym = contour_error_functions(
