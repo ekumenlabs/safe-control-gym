@@ -63,7 +63,6 @@ class MPCCController():
         def deg_to_rad(d): return d * 2 * m.pi / 180.0
 
         self.MPCC_CONTOUR_ERROR_GAUSSIAN_SIGMA = 0.4  # m
-        self.MPCC_GATEWAY_CORRECTION_PATCH_SIGMA = 0.4  # m
 
         self.MPCC_SPEED_BUMP_K = 5.0  # unit-less gain
         self.MPCC_SPEED_BUMP_TRESHOLD = 1.2  # m/s
@@ -354,28 +353,6 @@ class MPCCController():
         current_vehicle_pos = cs.MX.sym('current_vehicle_pos', 3)
 
         #
-        # speed bump cost parameters
-
-        next_gate_location = cs.MX.sym('next_gate_location', 3)
-        next_gate_location_is_fuzzy = cs.MX.sym('next_gate_location_is_fuzzy')
-
-        #
-        # Auxiliar expresions
-
-        distance_to_next_gate = current_vehicle_pos - next_gate_location
-
-        proximity_to_gate_factor = cs.exp(-1.0 / (2 * self.MPCC_SPEED_BUMP_REGION_SIGMA**2)
-                                          * cs.dot(distance_to_next_gate, distance_to_next_gate))
-
-        # this factor tends to infinity if v > threshold, and tends to 0 if it's below. The gain K determines sensibility
-        speed_threshold_factor = cs.exp(
-            1.0 + self.MPCC_SPEED_BUMP_K * (contour_param_vel - self.MPCC_SPEED_BUMP_TRESHOLD) / self.MPCC_SPEED_BUMP_TRESHOLD)
-
-        progress_incentive_variable_weight = progress_incentive_weight * \
-            (1 - next_gate_location_is_fuzzy *
-             proximity_to_gate_factor * speed_threshold_factor)
-
-        #
         # Cost term expresion
 
         lag_error_cost = lag_error_weight * (lag_error * lag_error)
@@ -392,7 +369,7 @@ class MPCCController():
         rate_bounded_thrust_change_cost = rbt_weight * \
             cs.dot(delta_rate_bounded_thrust, delta_rate_bounded_thrust)
 
-        progress_incentive = progress_incentive_variable_weight * contour_param_vel
+        progress_incentive = progress_incentive_weight * contour_param_vel
 
         J_mpcc_k = lag_error_cost + contour_error_cost + orientation_rate_cost + \
             contour_rate_change_cost + rate_bounded_thrust_change_cost - progress_incentive
@@ -404,11 +381,11 @@ class MPCCController():
             'cost_term_function',
             [lag_error, contour_error, contour_error_weight, body_orientation_rate,
                 contour_param_acc, delta_rate_bounded_thrust, contour_param_vel,
-                current_vehicle_pos, next_gate_location, next_gate_location_is_fuzzy],
+                current_vehicle_pos],
             [J_mpcc_k],
             ['lag_error', 'contour_error', 'contour_error_weight', 'body_orientation_rate',
                 'contour_param_acc', 'delta_rate_bounded_thrust', 'contour_param_vel',
-                'current_vehicle_pos', 'next_gate_location', 'next_gate_location_is_fuzzy'],
+                'current_vehicle_pos'],
             ['J_mpcc_k'])
 
         return cost_term_function.expand()
@@ -457,12 +434,6 @@ class MPCCController():
 
         theta = cs.MX.sym('theta')
 
-        next_gate_location = cs.MX.sym('next_gate_location', 3)
-        prev_gate_location = cs.MX.sym('prev_gate_location', 3)
-
-        next_gate_correction = cs.MX.sym('next_gate_correction', 3)
-        prev_gate_correction = cs.MX.sym('prev_gate_correction', 3)
-
         #
         # contour curve interpolation
 
@@ -482,26 +453,10 @@ class MPCCController():
         contour_f_z = cs.interpolant(
             'contour_f_z', 'bspline', [spline_support], waypoints_z)
 
-        uncorrected_contour_curve = cs.vertcat(contour_f_x(
+        contour_curve = cs.vertcat(contour_f_x(
             theta), contour_f_y(theta), contour_f_z(theta))
 
-        distance_to_next_gate = uncorrected_contour_curve - next_gate_location
-        distance_to_prev_gate = uncorrected_contour_curve - prev_gate_location
-
-        next_gate_correction_term = next_gate_correction * \
-            cs.exp(-1.0 / (2 * self.MPCC_GATEWAY_CORRECTION_PATCH_SIGMA**2)
-                   * cs.dot(distance_to_next_gate, distance_to_next_gate))
-
-        prev_gate_correction_term = prev_gate_correction * \
-            cs.exp(-1.0 / (2 * self.MPCC_GATEWAY_CORRECTION_PATCH_SIGMA**2)
-                   * cs.dot(distance_to_prev_gate, distance_to_prev_gate))
-
-        curve_correction = next_gate_correction_term + prev_gate_correction_term
-
-        contour_curve = uncorrected_contour_curve + curve_correction
-
-        contour_curve_derivative = cs.jacobian(
-            uncorrected_contour_curve, theta)
+        contour_curve_derivative = cs.jacobian(contour_curve, theta)
 
         # TODO: I'd rather not do this assumption but dividing by the norm
         # causes Casadi to trip when differentiating the expresion around trivial
@@ -512,9 +467,6 @@ class MPCCController():
         # contour_tangent = contour_curve_derivative / \
         #     cs.norm_2(contour_curve_derivative)
 
-        # TODO to make things worse, the addition of the curve correction term above
-        # assumes the derivative is unaffected by the correction. Obviously, a lie
-
         contour_tangent = contour_curve_derivative  # READ ABOVE
 
         #
@@ -522,11 +474,9 @@ class MPCCController():
 
         contour_curve_function = cs.Function(
             'contour_curve_function',
-            [theta, next_gate_location, prev_gate_location,
-                next_gate_correction, prev_gate_correction],
+            [theta],
             [contour_curve, contour_tangent],
-            ['theta', 'next_gate_location', 'prev_gate_location',
-                'next_gate_correction', 'prev_gate_correction'],
+            ['theta'],
             ['contour_curve', 'contour_tangent'])
 
         # This function cannot be expanded to SX
@@ -678,13 +628,6 @@ class MPCCController():
         self.u_var = self.opti.variable(
             full_system_input_vector_len, horizon_len)
 
-        # optimization parameters
-        self.next_gate_location = self.opti.parameter(3)
-        self.prev_gate_location = self.opti.parameter(3)
-        self.next_gate_correction = self.opti.parameter(3)
-        self.prev_gate_correction = self.opti.parameter(3)
-        self.next_gate_location_is_fuzzy = self.opti.parameter()
-
         # Initial state vector
         self.x_init = self.opti.parameter(self.full_system_state_vector_len, 1)
 
@@ -701,11 +644,7 @@ class MPCCController():
                 self.u_var[:, k], [0, 4, full_system_input_vector_len])
             interpolant_functions_sym = self.interpolant_functions(
                 theta=contour_param_pos,
-                next_gate_location=self.next_gate_location,
-                prev_gate_location=self.prev_gate_location,
-                next_gate_correction=self.next_gate_correction,
-                prev_gate_correction=self.prev_gate_correction
-            )
+             )
             contour_curve = interpolant_functions_sym["contour_curve"]
             contour_tangent = interpolant_functions_sym["contour_tangent"]
             contour_error_functions_sym = contour_error_functions(
@@ -728,8 +667,6 @@ class MPCCController():
                 delta_rate_bounded_thrust=delta_rate_bounded_thrust,
                 contour_param_vel=contour_param_vel,
                 current_vehicle_pos=position,
-                next_gate_location=self.next_gate_location,
-                next_gate_location_is_fuzzy=self.next_gate_location_is_fuzzy,
             )["J_mpcc_k"]
 
         #  Note: there's no terminal cost term in MPCC cost function
@@ -805,18 +742,11 @@ class MPCCController():
 
         self.opti.solver('ipopt', nlp_opts, solver_opts)
         # Force JIT
-        corrections = {}
-        corrections["prev_gate_location"] = np.zeros(3)
-        corrections["prev_gate_correction"] = np.zeros(3)
-        corrections["next_gate_location"] = np.zeros(3)
-        corrections["next_gate_correction"] = np.zeros(3)
-        corrections['next_gate_location_is_fuzzy'] = False
         self.solve(
             current_pos=np.zeros(3),
             current_vel=np.zeros(3),
             current_rpy=np.zeros(3),
             current_pqr=np.zeros(3),
-            corrections=corrections,
         )
         self.prev_solution = None
 
@@ -824,8 +754,7 @@ class MPCCController():
               current_pos: np.ndarray,
               current_vel: np.ndarray,
               current_rpy: np.ndarray,
-              current_pqr: np.ndarray,
-              corrections: Dict[str, Any]):
+              current_pqr: np.ndarray):
         # Initialize solver, if we have any information
 
         # TODO: we need to initialize the optimizer with a state guestimation
@@ -862,22 +791,6 @@ class MPCCController():
 
         # set the value of the initialization vector parameter
         self.opti.set_value(self.x_init, self.virtual_init_state)
-
-        # optimization parameters
-
-        prev_gate_location = np.array(corrections['prev_gate_location'])
-        prev_gate_correction = np.array(corrections['prev_gate_correction'])
-        next_gate_location = np.array(corrections['next_gate_location'])
-        next_gate_correction = np.array(corrections['next_gate_correction'])
-
-        next_gate_location_is_fuzzy = corrections['next_gate_location_is_fuzzy']
-
-        self.opti.set_value(self.prev_gate_location, prev_gate_location)
-        self.opti.set_value(self.prev_gate_correction, prev_gate_correction)
-        self.opti.set_value(self.next_gate_location, next_gate_location)
-        self.opti.set_value(self.next_gate_correction, next_gate_correction)
-        self.opti.set_value(self.next_gate_location_is_fuzzy,
-                            1.0 if next_gate_location_is_fuzzy else 0.0)
 
         # Magic here
         x_sol = None
@@ -919,10 +832,6 @@ class MPCCController():
             self.virtual_init_state[14] += self.PARAM_DT * fallback_velocity
             interpolant_functions_sym = self.interpolant_functions(
                 theta=self.virtual_init_state[14],
-                next_gate_location=next_gate_location,
-                prev_gate_location=prev_gate_location,
-                next_gate_correction=next_gate_correction,
-                prev_gate_correction=prev_gate_correction
             )
             contour_param_pos = self.virtual_init_state[14]
             pos = np.array(interpolant_functions_sym["contour_curve"].T)[0, :]
