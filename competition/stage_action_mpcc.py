@@ -95,9 +95,12 @@ class StageActionMPCC():
 
         current_carrot_pos = solver_output[4]
 
-        command_type = Command(1)  # cmdFullState.
-        args = [target_pos, target_vel, target_acc,
-                target_yaw, target_rpy_rates]
+        # command_type = Command(1)  # cmdFullState.
+        # args = [target_pos, target_vel, target_acc,
+        #         target_yaw, target_rpy_rates]
+
+        command_type = Command(7)  # cmdCurve.
+        args = [None]
 
         # are we there yet?
         done = False

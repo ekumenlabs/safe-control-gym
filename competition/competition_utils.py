@@ -35,8 +35,7 @@ class Command(Enum):
         # Must be called to transfer drone state from low level control (cmdFullState) to high level control (takeoff, land, goto)
         # https://crazyswarm.readthedocs.io/en/latest/api.html#pycrazyswarm.crazyflie.Crazyflie.notifySetpointsStop
 
-    CURVE = 7 # Args: None
-
+    CURVE = 7 # Args: [curve]
 
 class PIDController():
     """PID control class for Crazyflies.
