@@ -68,7 +68,7 @@ class StageActionMPCC():
 
         self._start_time = time.time()
 
-    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr, corrections) -> Tuple[bool, Command, list]:
+    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr) -> Tuple[bool, Command, list]:
         if (stage_iteration == 0):
             self._start_time = time.time()
 
@@ -77,7 +77,6 @@ class StageActionMPCC():
             current_vel=vel,
             current_rpy=rpy,
             current_pqr=pqr,
-            corrections=corrections,
         )
 
         if solver_output is None:
@@ -91,8 +90,8 @@ class StageActionMPCC():
         target_pos = np.array(solver_output[0])
         target_vel = np.array(solver_output[1])
         target_acc = np.zeros(3)
-        target_yaw = 0.0  # yaw angle locked at a fixed orientation
-        target_rpy_rates = np.array(solver_output[3]) * 180/3.1415
+        target_yaw = solver_output[2][-1]
+        target_rpy_rates = np.array(solver_output[3])
 
         current_carrot_pos = solver_output[4]
 

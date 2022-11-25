@@ -80,7 +80,7 @@ class RateEstimator():
 
         pqr_body_rates = rotation_matrix @ self.filtered_euler_angle_rates
 
-        return pqr_body_rates * 0.0  # TODO disabled because it destabilizes the control
+        return pqr_body_rates  # TODO disabled because it destabilizes the control
 
 
 if __name__ == '__main__':

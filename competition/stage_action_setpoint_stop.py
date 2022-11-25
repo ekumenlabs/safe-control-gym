@@ -33,7 +33,7 @@ class StageActionSetPointStop():
     def __init__(self):
         pass
 
-    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr, corrections) -> Tuple[bool, Command, list]:
+    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr) -> Tuple[bool, Command, list]:
         command_type = Command(6)  # notify setpoint stop.
         args = []
         done = True

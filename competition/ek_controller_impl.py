@@ -103,11 +103,9 @@ class EkControllerImpl:
                           obs: list,
                           iteration: int
                           ) -> Tuple[Command, list]:
-        corrections = self._process_gate_correction_data(info)
-        cur_pos, cur_rpy = self._split_observations(obs)
-        est_vel, est_pqr = self._estimate_missing_states(cur_pos, cur_rpy)
+        cur_pos, cur_vel, cur_rpy, cur_pqr = self._split_observations(obs)
         _, command_type, args = self._stage_sequencer.run(
-            iteration, cur_pos, est_vel, cur_rpy, est_pqr, corrections)
+            iteration, cur_pos, cur_vel, cur_rpy, cur_pqr)
         return command_type, args
 
     def reset_episode(self):
@@ -136,8 +134,10 @@ class EkControllerImpl:
 
     def _split_observations(self, obs: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         current_pos = np.array([obs[0], obs[2], obs[4]])
+        current_vel = np.array([obs[1], obs[3], obs[5]])
         current_rpy = np.array(obs[6:9])
-        return current_pos, current_rpy
+        current_pqr = np.array(obs[9:12])
+        return current_pos, current_vel, current_rpy, current_pqr
 
     def _estimate_missing_states(self, current_pos: np.ndarray, current_rpy: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         estimated_velocity, estimated_body_rates = self._rate_estimator.estimate(
@@ -225,71 +225,6 @@ class EkControllerImpl:
 
         return np.array(waypoint_arg), np.array(waypoint_pos), waypoint_marks
 
-    def _process_gate_correction_data(self, info):
-        try:
-            gate_id = info['current_target_gate_id']
-            gate_type = info['current_target_gate_type']
-            gate_in_range = info['current_target_gate_in_range']
-            gate_pos = info['current_target_gate_pos']
-
-            if gate_id != self._next_gate_id:
-                self._prev_gate_id = self._next_gate_id
-                self._next_gate_id = gate_id
-
-            corrected_gate_pose = self._calculate_gate_pos(
-                x=gate_pos[0],
-                y=gate_pos[1],
-                yaw=gate_pos[5],
-                type=gate_type)
-
-            if gate_id not in self._gate_nominal_poses and not gate_in_range:
-                self._gate_nominal_poses[gate_id] = \
-                    *corrected_gate_pose, gate_type
-                print("Received a nominal gate pose for id {}: {}".format(
-                    gate_id, corrected_gate_pose))
-
-            if gate_id not in self._gate_corrected_poses and gate_in_range:
-                self._gate_corrected_poses[gate_id] = \
-                    *corrected_gate_pose, gate_type
-                print("Received a corrected gate pose for id {}: {}".format(
-                    gate_id, corrected_gate_pose))
-        except:
-            pass
-
-        corrections = {}
-
-        corrections["prev_gate_location"] = self._get_location_for(
-            self._prev_gate_id)
-        corrections["prev_gate_correction"] = self._get_correction_for(
-            self._prev_gate_id)
-
-        corrections["next_gate_location"] = self._get_location_for(
-            self._next_gate_id)
-        corrections["next_gate_correction"] = self._get_correction_for(
-            self._next_gate_id)
-
-        corrections['next_gate_location_is_fuzzy'] = self._gate_location_is_fuzzy(
-            self._next_gate_id)
-
-        return corrections
-
-    def _gate_location_is_fuzzy(self, id):
-        return id not in self._gate_corrected_poses
-
-    def _get_location_for(self, id):
-        """if the nominal pose is uknown, return some position far away"""
-        return self._gate_nominal_poses[id][0:3] if id in self._gate_nominal_poses else np.ones(3) * 99
-
-    def _get_correction_for(self, id):
-        """if the nominal pose is uknown, return all zeros for the correction"""
-        if id in self._gate_nominal_poses and id in self._gate_corrected_poses:
-            nominal = self._gate_nominal_poses[id]
-            actual = self._gate_corrected_poses[id]
-            gate_correction = np.array(
-                actual[0:3]) - np.array(nominal[0:3])
-            return gate_correction
-        return np.zeros(3)
-
     def _build_flight_sequence(self, waypoints_arg, waypoints_pos, landmarks):
         take_off_duration = 1.0
         take_off_height = self._take_off_height
@@ -312,7 +247,7 @@ class EkControllerImpl:
                 ixx=self._config.ixx,
                 iyy=self._config.iyy,
                 izz=self._config.izz,
-                mpcc_horizon_len=10,
+                mpcc_horizon_len=20,
                 waypoints_arg=waypoints_arg,
                 waypoints_pos=waypoints_pos,
                 waypoints_marks=landmarks,

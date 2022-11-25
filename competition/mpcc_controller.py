@@ -66,27 +66,28 @@ class MPCCController():
 
         def deg_to_rad(d): return d * 2 * m.pi / 180.0
 
-        self.MPCC_CONTOUR_ERROR_GAUSSIAN_SIGMA = 0.4  # m
+        self.MPCC_CONTOUR_ERROR_GAUSSIAN_SIGMA = 2.5 # m
 
-        self.MPCC_PROGRESS_INCENTIVE_PEAK_WEIGHT = 1.0
+        self.MPCC_PROGRESS_INCENTIVE_PEAK_WEIGHT = 1.5
         self.MPCC_LAG_ERROR_WEIGHT = 45.0
-        self.MPCC_CONTOUR_ERROR_WEIGHT_MAX = 45.0
+        self.MPCC_CONTOUR_ERROR_WEIGHT_MAX = 65.0
         self.MPCC_CONTOUR_ERROR_WEIGHT_MIN = 25.0
-        self.MPCC_BODY_ORIENTATION_RATE_WEIGHT_DIAG = 1.4
+        self.MPCC_BODY_ORIENTATION_RATE_WEIGHT_DIAG = 0.2
         self.MPCC_CONTOUR_RATE_CHANGE_WEIGHT = 0.08
         self.MPCC_RATE_BOUNDED_THRUST_WEIGHT = 0.001
 
-        self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MAX_MODULE = 0.8  # N
-        self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MIN_MODULE = 0.1  # N
-        self.MPCC_CONSTRAINT_DELTA_RATE_BOUNDED_THRUST_MAX_MODULE = 0.4 # N / s
+        self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MAX_MODULE = 3.0  # N
+        self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MIN_MODULE = 0.0  # N
+        self.MPCC_CONSTRAINT_DELTA_RATE_BOUNDED_THRUST_MAX_MODULE = 2. # N / s
         self.MPCC_CONSTRAINT_DELTA_RATE_BOUNDED_THRUST_MIN_MODULE = 0. # N / s
         self.MPCC_CONSTRAINT_MAX_INCLINATION_MODULE = deg_to_rad(60)  # deg
         self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE = \
-            deg_to_rad(270)  # deg/sec
-        self.MPCC_CONSTRAINT_CONTOUR_PARAM_VEL_MAX = 1.8  # m/s
-        self.MPCC_CONSTRAINT_CONTOUR_PARAM_ACC_MAX_MODULE = 4.0  # m/(s*s)
+            deg_to_rad(450)  # deg/sec
+        self.MPCC_CONSTRAINT_CONTOUR_PARAM_VEL_MAX = 0.8  # m/s
+        self.MPCC_CONSTRAINT_CONTOUR_PARAM_ACC_MAX_MODULE = 5.  # m/(s*s)
 
         # Initialize the solver state
+        self.solver = None
         self.reset()
 
     def _build_discrete_system_model(self):
@@ -139,11 +140,12 @@ class MPCCController():
         # quadrotor orientation in world frame
         phi = cs.MX.sym('phi')      # Roll
         theta = cs.MX.sym('theta')  # Pitch
+        psi = cs.MX.sym('psi')      # Yaw
 
         # quadrotor orientation change rate in body frame
         p = cs.MX.sym('p')  # Body frame roll rate
-        q = cs.MX.sym('q')  # body frame pith rate
-
+        q = cs.MX.sym('q')  # body frame pitch rate
+        r = cs.MX.sym('r')  # Body frame yaw rate
         #
         # Dynamic model inputs
 
@@ -158,7 +160,7 @@ class MPCCController():
 
         # rotation matrix transforming a vector in the body frame to the world frame.
         # PyBullet Euler angles use the SDFormat for rotation matrices.
-        Rob = csRotXYZ(phi, theta, 0.0)
+        Rob = csRotXYZ(phi, theta, psi)
 
         # aggregated thrust, in body frame
         fT = cs.vertcat(0, 0, f1 + f2 + f3 + f4)
@@ -188,21 +190,21 @@ class MPCCController():
         # Orientation rate of change
         ang_dot = cs.blockcat([[1, cs.sin(phi)*cs.tan(theta), cs.cos(phi)*cs.tan(theta)],
                                [0, cs.cos(phi), -cs.sin(phi)],
-                               [0, cs.sin(phi)/cs.cos(theta), cs.cos(phi)/cs.cos(theta)]]) @ cs.vertcat(p, q, 0.0)
+                               [0, cs.sin(phi)/cs.cos(theta), cs.cos(phi)/cs.cos(theta)]]) @ cs.vertcat(p, q, r)
 
         # Orientation rate rate of change
-        rate_dot = Jinv @ (Mb - (cs.skew(cs.vertcat(p, q, 0.0))
-                           @ J @ cs.vertcat(p, q, 0.0)))
+        rate_dot = Jinv @ (Mb - (cs.skew(cs.vertcat(p, q, r))
+                           @ J @ cs.vertcat(p, q, r)))
 
         #
         # Aggregated state and input vectors
 
         # state and input vectors
-        X = cs.vertcat(x, y, z, x_dot, y_dot, z_dot, phi, theta, p, q)
+        X = cs.vertcat(x, y, z, x_dot, y_dot, z_dot, phi, theta, psi, p, q, r)
         U = cs.vertcat(f1, f2, f3, f4)
 
         # dynamic function f(X, U)
-        X_dot = cs.vertcat(pos_dot, pos_ddot, ang_dot[0:2], rate_dot[0:2])
+        X_dot = cs.vertcat(pos_dot, pos_ddot, ang_dot, rate_dot)
 
         continuous_system_model_function = cs.Function(
             'continuous_system_model_function', [X, U], [X_dot], ['X', 'U'], ['X_dot'])
@@ -232,16 +234,16 @@ class MPCCController():
         U = cs.MX.sym('U', m)
 
         # Runge-Kutta 4 integration
-        # k1 = f(X,         U)
-        # k2 = f(X+dt/2*k1, U)
-        # k3 = f(X+dt/2*k2, U)
-        # k4 = f(X+dt*k3,   U)
-        # X_next = X + dt/6*(k1+2*k2+2*k3+k4)
+        k1 = f(X,         U)
+        k2 = f(X+dt/2*k1, U)
+        k3 = f(X+dt/2*k2, U)
+        k4 = f(X+dt*k3,   U)
+        X_next = X + dt/6*(k1+2*k2+2*k3+k4)
 
         # Runge-Kutta 2 integration
-        k1 = f(X, U)
-        k2 = f(X + k1*dt, U)
-        X_next = X + dt*(k1+k2)/2
+        # k1 = f(X, U)
+        # k2 = f(X + k1*dt, U)
+        # X_next = X + dt*(k1+k2)/2
 
         system_model_disc = cs.Function(
             'system_model_disc', [X, U], [X_next], ['X', 'U'], ['X_next'])
@@ -341,7 +343,7 @@ class MPCCController():
         contour_error_weight = cs.MX.sym('contour_error_weight')
 
         # orientation rate of change
-        body_orientation_rate = cs.MX.sym('body_orientation_rate', 2)
+        body_orientation_rate = cs.MX.sym('body_orientation_rate', 3)
 
         # progress rate along the curve
         contour_param_vel = cs.MX.sym('contour_param_vel')
@@ -567,12 +569,13 @@ class MPCCController():
         X_dot = cs.MX.sym('X_dot', X.size(1))
 
         model = ad.AcadosModel()
-        model.f_disc_exp = full_mpcc_system_function(X, U)
+        model.disc_dyn_expr = full_mpcc_system_function(X, U)
         model.x = X
         model.u = U
         model.xdot = X_dot
         model.z = []
         model.p = []
+        model.name = 'crazyflie_contouring_control_model'
         return model
 
     def _split_actions(self, x_next):
@@ -581,9 +584,9 @@ class MPCCController():
         """
         pos = np.array(x_next[0:3])
         vel = np.array(x_next[3:6])
-        rpy = np.array((*x_next[6:8], 0.0))
-        body_rates = np.array((*x_next[8:10], 0.0))
-        contour_param_pos = x_next[14]
+        rpy = np.array(x_next[6:9])
+        body_rates = np.array(x_next[9:12])
+        contour_param_pos = x_next[16]
         return pos, vel, rpy, body_rates, contour_param_pos
 
     def setup(self,
@@ -629,9 +632,8 @@ class MPCCController():
 
         #
         # Setup MPCC cost function
-
         position, _, _, body_orientation_rate, rate_bounded_thrust, contour_param_pos, contour_param_vel = cs.vertsplit(
-            self.ocp.model.x, [0, 3, 6, 8, 10, 14, 15, full_system_state_vector_len])
+            self.ocp.model.x, [0, 3, 6, 9, 12, 16, 17, full_system_state_vector_len])
         delta_rate_bounded_thrust, contour_param_acc = cs.vertsplit(
             self.ocp.model.u, [0, 4, full_system_input_vector_len])
 
@@ -653,7 +655,7 @@ class MPCCController():
         contour_error_weight = contour_error_weight_sym["contour_error_weight"]
 
         self.ocp.cost.cost_type = "EXTERNAL"
-        self.ocp.cost.cost_expr_ext_cost = mpcc_cost_term_function(
+        self.ocp.model.cost_expr_ext_cost = mpcc_cost_term_function(
             lag_error=lag_error,
             contour_error=contour_error,
             contour_error_weight=contour_error_weight,
@@ -666,8 +668,6 @@ class MPCCController():
 
         # Note: the terminal cost term in MPCC cost function
         # is the same as of intermediate shooting nodes
-        self.ocp.cost.cost_type_e = "EXTERNAL"
-        self.ocp.cost.cost_expr_ext_cost_e = self.ocp.cost.cost_expr_ext_cost
 
         #
         # Constraints
@@ -676,49 +676,55 @@ class MPCCController():
         # Initial states for subsequent horizons are constrained via
         # linear state constraints.
 
-        # Initial state vector
+        # Initial state constraint
         self.ocp.constraints.x0 = np.zeros(full_system_state_vector_len)
+        self.ocp.constraints.Jbx_0 = np.eye(full_system_state_vector_len)
+        self.ocp.constraints.lbx_0 = np.zeros(full_system_state_vector_len)
+        self.ocp.constraints.ubx_0 = np.zeros(full_system_state_vector_len)
 
         # TODO: some of these might better the constrained individually and not as
         # the module of the vector (e.g. rate_bounded_thrust)
 
         # Linear constraints on state, namely:
         # - |roll, pitch| <= inclination_max
-        # - |p, q| <= w_max
+        # - |p, q, r| <= w_max
         # - 0 <= contour_param_vel < contour_param_vel_max
-        ilx = np.array([6, 7, 8, 9, 14])
-        self.ocp.constraints.Jbx = np.zeros((
+        ilx = np.array([6, 7, 9, 10, 11, 17])
+        C = np.zeros((
             full_system_state_vector_len,
             full_system_state_vector_len))
-        self.ocp.constraints.Jbx[ilx, ilx] = 1
-        self.ocp.constraints.Jbx = self.ocp.constraints.Jbx[ilx, :]
-        self.ocp.constraints.Jbx_0 = self.ocp.constraints.Jbx
-        self.ocp.constraints.Jbx_e = self.ocp.constraints.Jbx
-        self.ocp.constraints.lbx = np.array([
+        C[ilx, ilx] = 1
+        C = C[ilx, :]
+        self.ocp.constraints.C = C
+        self.ocp.constraints.C_e = C
+        self.ocp.constraints.D = np.zeros_like(C)
+        self.ocp.constraints.lg = np.array([
             -self.MPCC_CONSTRAINT_MAX_INCLINATION_MODULE,
             -self.MPCC_CONSTRAINT_MAX_INCLINATION_MODULE,
             -self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE,
             -self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE,
-            0., -self.MPCC_CONSTRAINT_CONTOUR_PARAM_ACC_MAX_MODULE
+            -self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE,
+            0.
         ])
-        self.ocp.constraints.lbx_0 = self.ocp.constraints.lbx
-        self.ocp.constraints.lbx_e = self.ocp.constraints.lbx
-        self.ocp.constraints.ubx = np.array([
+        self.ocp.constraints.lg_e = self.ocp.constraints.lg
+        self.ocp.constraints.ug = np.array([
             self.MPCC_CONSTRAINT_MAX_INCLINATION_MODULE,
             self.MPCC_CONSTRAINT_MAX_INCLINATION_MODULE,
+            self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE,
             self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE,
             self.MPCC_CONSTRAINT_BODY_ORIENTATION_RATE_MAX_MODULE,
             self.MPCC_CONSTRAINT_CONTOUR_PARAM_VEL_MAX,
         ])
-        self.ocp.constraints.ubx_0 = self.ocp.constraints.ubx
-        self.ocp.constraints.ubx_e = self.ocp.constraints.ubx
+        self.ocp.constraints.ug_e = self.ocp.constraints.ug
 
         # Linear constraints on input, namely:
         # - |contour_curve_acc| <= contour_curve_acc_max
-        self.ocp.constraints.Jbu = np.zeros(
-            self.full_system_input_vector_len)
-        self.ocp.constraints.Jbu[-1] = 1
-        self.ocp.constraints.lbu = np.array([0])
+        Jbu = np.zeros((1, full_system_input_vector_len))
+        Jbu[0, -1] = 1
+        self.ocp.constraints.Jbu = Jbu
+
+        self.ocp.constraints.lbu = np.array([
+            -self.MPCC_CONSTRAINT_CONTOUR_PARAM_ACC_MAX_MODULE])
         self.ocp.constraints.ubu = np.array([
             self.MPCC_CONSTRAINT_CONTOUR_PARAM_ACC_MAX_MODULE])
 
@@ -727,26 +733,37 @@ class MPCCController():
         # - |df| <= df_max
         self.ocp.model.con_h_expr = cs.vertcat(
             cs.dot(rate_bounded_thrust, rate_bounded_thrust),
-            cs.dot(delta_rate_bounded_thrust, delta_rate_bounded_thrust),
+        #    cs.dot(delta_rate_bounded_thrust, delta_rate_bounded_thrust),
         )
         self.ocp.constraints.lh = np.array([
             self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MIN_MODULE**2,
-            self.MPCC_CONSTRAINT_DELTA_RATE_BOUNDED_THRUST_MIN_MODULE**2,
+        #    self.MPCC_CONSTRAINT_DELTA_RATE_BOUNDED_THRUST_MIN_MODULE**2,
         ])
         self.ocp.constraints.uh = np.array([
             self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MAX_MODULE**2,
-            self.MPCC_CONSTRAINT_DELTA_RATE_BOUNDED_THRUST_MAX_MODULE**2,
+        #    self.MPCC_CONSTRAINT_DELTA_RATE_BOUNDED_THRUST_MAX_MODULE**2,
         ])
-        self.ocp.constraints.lh_e = self.ocp.constraints.lh
-        self.ocp.constraints.uh_e = self.ocp.constraints.uh
+        self.ocp.model.con_h_expr_e = cs.dot(rate_bounded_thrust, rate_bounded_thrust)
+        self.ocp.constraints.lh_e = np.array([
+            self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MIN_MODULE**2])
+        self.ocp.constraints.uh_e = np.array([
+            self.MPCC_CONSTRAINT_RATE_BOUNDED_THRUST_MAX_MODULE**2])
 
         # Complete solver initializtion
         self.ocp.solver_options.tf = self.MPCC_HORIZON_LEN * self.PARAM_DT
-        self.ocp.solver_options.nlp_solver_type = "SQP_RTI"
+        self.ocp.solver_options.qp_solver = "FULL_CONDENSING_QPOASES"
+        self.ocp.solver_options.qp_solver_cond_N = self.MPCC_HORIZON_LEN
+        self.ocp.solver_options.qp_solver_warm_start = 1
+        self.ocp.solver_options.qp_tol = 1e-2
+        self.ocp.solver_options.nlp_solver_type = "SQP"
+        self.ocp.solver_options.tol = 1e-2
         self.ocp.solver_options.hessian_approx = "EXACT"
+        #self.ocp.solver_options.nlp_solver_ext_qp_res = 1
+        #self.ocp.solver_options.regularize_method = "PROJECT"
+        self.ocp.solver_options.levenberg_marquardt = 3.
         self.ocp.solver_options.integrator_type = "DISCRETE"
+
         self.solver = ad.AcadosOcpSolver(self.ocp, json_file="mpcc.json")
-        self.solver.solve()
 
         self.warm_started = False
 
@@ -767,15 +784,15 @@ class MPCCController():
             self.virtual_init_state = self.solver.get(1, "x")
         else:
             # pre-set thrust for buoyancy
-            self.virtual_init_state[10:14] = \
-                self.PARAM_DRONE_MASS * self.PARAM_GRAVITY / 4.0
+            self.virtual_init_state[12:16] = \
+               self.PARAM_DRONE_MASS * self.PARAM_GRAVITY / 4.0
 
         # build the initialization vector from a mixture of observable states
         # and the previous iteration's state estimations
         self.virtual_init_state[0:3] = current_pos
         self.virtual_init_state[3:6] = current_vel
-        self.virtual_init_state[6:8] = current_rpy[0:2]
-        self.virtual_init_state[8:10] = current_pqr[0:2]
+        self.virtual_init_state[6:9] = current_rpy
+        self.virtual_init_state[9:12] = current_pqr
 
         # set the value of the initialization vector parameter
         self.solver.constraints_set(0, "lbx", self.virtual_init_state)
@@ -786,16 +803,19 @@ class MPCCController():
 
         if status != 0:
             print("The solver did not return a solution, so we are making up our own!")
+            self.solver.print_statistics()
+            self.solver.reset()
             self.warm_started = False
-            fallback_velocity = 0.5
-            self.virtual_init_state[14] += self.PARAM_DT * fallback_velocity
+            fallback_velocity = 0.2
+            self.virtual_init_state[16] += self.PARAM_DT * fallback_velocity
             interpolant_functions_sym = self.interpolant_functions(
-                theta=self.virtual_init_state[14],
+                theta=self.virtual_init_state[16],
             )
-            contour_param_pos = self.virtual_init_state[14]
+            contour_param_pos = self.virtual_init_state[16]
             pos = np.array(interpolant_functions_sym["contour_curve"].T)[0, :]
             vel = fallback_velocity * \
                 np.array(interpolant_functions_sym["contour_tangent"].T)[0, :]
+            rpy = body_rates = np.zeros(3)
         else:
             # recover actionable values
             pos, vel, rpy, body_rates, contour_param_pos = \
@@ -814,13 +834,14 @@ class MPCCController():
         #
         # END OF DEBUG CODE
         #
-
+        print(self.solver.get(1, "x"))
         return pos, vel, rpy, body_rates, current_carrot_pos, vector_to_be_logged
 
     def reset(self):
-        self.solver = None
         self.warm_started = False
-        self.virtual_init_state = np.zeros(16)
+        if self.solver is not None:
+            self.virtual_init_state = np.zeros(
+                self.solver.acados_ocp.model.x.size(1))
 
 
 if __name__ == '__main__':

@@ -51,7 +51,7 @@ class StageActionHardBrake():
 
         self.reset()
 
-    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr, corrections) -> Tuple[bool, Command, list]:
+    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr) -> Tuple[bool, Command, list]:
 
         distance_vector = pos - self._goal_pose
 

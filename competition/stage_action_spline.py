@@ -51,7 +51,7 @@ class StageActionSpline():
             contour_poses=waypoints_arg
         )
 
-    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr, corrections) -> Tuple[bool, Command, list]:
+    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr) -> Tuple[bool, Command, list]:
         done = False
         theta = self._arc_vel * stage_iteration * self._dt
         if theta > self._end_of_curve_arg:

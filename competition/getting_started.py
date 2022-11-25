@@ -69,14 +69,14 @@ def run(test=False):
     if config.use_firmware:
         FIRMWARE_FREQ = 500
         assert(config.quadrotor_config['pyb_freq'] % FIRMWARE_FREQ == 0), "pyb_freq must be a multiple of firmware freq"
-        # The env.step is called at a firmware_freq rate, but this is not as intuitive to the end user, and so 
-        # we abstract the difference. This allows ctrl_freq to be the rate at which the user sends ctrl signals, 
-        # not the firmware. 
+        # The env.step is called at a firmware_freq rate, but this is not as intuitive to the end user, and so
+        # we abstract the difference. This allows ctrl_freq to be the rate at which the user sends ctrl signals,
+        # not the firmware.
         config.quadrotor_config['ctrl_freq'] = FIRMWARE_FREQ
         env_func = partial(make, 'quadrotor', **config.quadrotor_config)
         firmware_wrapper = make('firmware',
                     env_func, FIRMWARE_FREQ, CTRL_FREQ
-                    ) 
+                    )
         obs, info = firmware_wrapper.reset()
         info['ctrl_timestep'] = CTRL_DT
         info['ctrl_freq'] = CTRL_FREQ
@@ -85,12 +85,12 @@ def run(test=False):
         env = make('quadrotor', **config.quadrotor_config)
         # Reset the environment, obtain the initial observations and info dictionary.
         obs, info = env.reset()
-    
+
     # Create controller.
-    vicon_obs = [obs[0], 0, obs[2], 0, obs[4], 0, obs[6], obs[7], obs[8], 0, 0, 0]
+    # vicon_obs = [obs[0], 0, obs[2], 0, obs[4], 0, obs[6], obs[7], obs[8], 0, 0, 0]
         # obs = {x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r}.
         # vicon_obs = {x, 0, y, 0, z, 0, phi, theta, psi, 0, 0, 0}.
-    ctrl = Controller(vicon_obs, info, config.use_firmware, verbose=config.verbose)
+    ctrl = Controller(obs, info, config.use_firmware, verbose=config.verbose)
 
     # Create a logger and counters
     logger = Logger(logging_freq_hz=CTRL_FREQ)
@@ -160,7 +160,7 @@ def run(test=False):
 
         # Compute control input.
         if config.use_firmware:
-            vicon_obs = [obs[0], 0, obs[2], 0, obs[4], 0, obs[6], obs[7], obs[8], 0, 0, 0]
+            # vicon_obs = [obs[0], 0, obs[2], 0, obs[4], 0, obs[6], obs[7], obs[8], 0, 0, 0]
                 # obs = {x, x_dot, y, y_dot, z, z_dot, phi, theta, psi, p, q, r}.
                 # vicon_obs = {x, 0, y, 0, z, 0, phi, theta, psi, 0, 0, 0}.
             if first_ep_iteration:
@@ -169,7 +169,7 @@ def run(test=False):
                 done = False
                 info = {}
                 first_ep_iteration = False
-            command_type, args = ctrl.cmdFirmware(curr_time, vicon_obs, reward, done, info)
+            command_type, args = ctrl.cmdFirmware(curr_time, obs, reward, done, info)
 
             # Select interface.
             if command_type == Command.FULLSTATE:
@@ -311,7 +311,7 @@ def run(test=False):
             if config.verbose:
                 print(str(episodes_count)+'-th reset.')
                 print('Reset obs' + str(new_initial_obs))
-            
+
             episode_start_iter = i+1
             ep_start = time.time()
 

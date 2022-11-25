@@ -49,7 +49,6 @@ class StageSequencer():
             est_vel: np.ndarray,
             cur_rpy: np.ndarray,
             est_pqr: np.ndarray,
-            corrections: Dict[str, Any],
             ) -> Tuple[bool, Command, list]:
         if self._stage_index >= len(self._stages):
             # Warn us, but create a none command
@@ -57,7 +56,7 @@ class StageSequencer():
                 "WARNING! Stage sequencer continues to execute after running out of _stages")
 
         done, command, args = self._current_stage().run(
-            global_iteration, self._stage_iteration, cur_pos, est_vel, cur_rpy, est_pqr, corrections)
+            global_iteration, self._stage_iteration, cur_pos, est_vel, cur_rpy, est_pqr)
 
         # move on to the next stage
         if done:

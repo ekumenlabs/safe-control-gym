@@ -38,7 +38,7 @@ class StageActionLand():
         self._height = height
         self._duration = duration
 
-    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr, corrections) -> Tuple[bool, Command, list]:
+    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr) -> Tuple[bool, Command, list]:
         # default to no command
         command_type = Command(0)  # None.
         args = []

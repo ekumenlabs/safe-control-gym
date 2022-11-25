@@ -41,7 +41,7 @@ class StageActionGotoXY():
         self.TARGET_YAW = yaw
         self._duration = duration
 
-    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr, corrections) -> Tuple[bool, Command, list]:
+    def run(self, global_iteration, stage_iteration, pos, vel, rpy, pqr) -> Tuple[bool, Command, list]:
         command_type = Command(0)  # None.
         args = []
         done = False
