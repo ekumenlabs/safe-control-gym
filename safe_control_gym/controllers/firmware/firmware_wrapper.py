@@ -14,7 +14,7 @@ class FirmwareWrapper(BaseController):
     ACTION_DELAY = 0 # how many firmware loops run between the controller commanding an action and the drone motors responding to it
     SENSOR_DELAY = 0 # how many firmware loops run between experiencing a motion and the sensors registering it
     STATE_DELAY = 0 # not yet supported, keep 0
-    CONTROLLER = 'MPCC' # specifies controller type
+    CONTROLLER = 'melliger' # specifies controller type
 
     # Configurations to match firmware. Not recommended to change
     GYRO_LPF_CUTOFF_FREQ = 80
@@ -160,6 +160,7 @@ class FirmwareWrapper(BaseController):
         self.sensorData_set = False
         self.state_set = False
         self.full_state_cmd_override = True # When true, high level commander is not called
+        self.use_setpoint = True # When true, MPCC must no be used, but instead another controller
 
         # Initialize controller
         if self.CONTROLLER == 'pid':
@@ -170,7 +171,7 @@ class FirmwareWrapper(BaseController):
             assert(self.firmware_freq == 500), "Mellinger controller requires a firmware frequency of 500Hz."
             print('Mellinger controller init test:', firm.controllerMellingerTest())
         elif self.CONTROLLER == 'MPCC':
-            firm.controllerMPCCInit(self.curve_terms)
+            firm.controllerMPCCInit()
             # assert(self.firmware_freq == 500), "Mellinger controller requires a firmware frequency of 500Hz."
             print('MPCC controller init test:', firm.controllerMPCCTest())
 
@@ -209,6 +210,9 @@ class FirmwareWrapper(BaseController):
     def close(self):
         self.env.close()
 
+    def sendFollowCurve(self, curve=None):
+        self.curve = curve
+        self.use_setpoint = False
 
     def step(self, sim_time, action):
         '''Step the firmware_wrapper class and its environment.
@@ -447,24 +451,26 @@ class FirmwareWrapper(BaseController):
         else:
             _tick = 1 # Runs neither controller
 
-        # Step the chosen controller
-        if self.CONTROLLER == 'pid':
-            firm.controllerPid(
-                self.control,
-                self.setpoint,
-                self.sensorData,
-                self.state,
-                _tick
-            )
-        elif self.CONTROLLER == 'mellinger':
-            firm.controllerMellinger(
-                self.control,
-                self.setpoint,
-                self.sensorData,
-                self.state,
-                _tick
-            )
-        elif self.CONTROLLER == 'MPCC':
+        # Step based on setpoint use: True use chosen controller, False use MPCC follow curve
+        if self.use_setpoint:
+            # Step the chosen controller
+            if self.CONTROLLER == 'pid':
+                firm.controllerPid(
+                    self.control,
+                    self.setpoint,
+                    self.sensorData,
+                    self.state,
+                    _tick
+                )
+            elif self.CONTROLLER == 'mellinger':
+                firm.controllerMellinger(
+                    self.control,
+                    self.setpoint,
+                    self.sensorData,
+                    self.state,
+                    _tick
+                )
+        else:
             firm.controllerMPCC(
                 self.control,
                 self.setpoint,
@@ -507,6 +513,7 @@ class FirmwareWrapper(BaseController):
             rpy_rate (list): roll, pitch, yaw rates (rad/s)
             timestep (float): simulation time when command is sent (s)
         """
+        self.use_setpoint = True
         self.command_queue += [['_sendFullStateCmd', [pos, vel, acc, yaw, rpy_rate, timestep]]]
 
 
@@ -557,6 +564,7 @@ class FirmwareWrapper(BaseController):
             height (float): target takeoff height (m)
             duration: (float): length of manuever
         """
+        self.use_setpoint = True
         self.command_queue += [['_sendTakeoffCmd', [height, duration]]]
     def _sendTakeoffCmd(self, height, duration):
         print(f"INFO_{self.tick}: Takeoff command sent.")
@@ -602,6 +610,7 @@ class FirmwareWrapper(BaseController):
             height (float): target landing height (m)
             duration: (float): length of manuever
         """
+        self.use_setpoint = True
         self.command_queue += [['_sendLandCmd', [height, duration]]]
     def _sendLandCmd(self, height, duration):
         print(f"INFO_{self.tick}: Land command sent.")
@@ -642,6 +651,7 @@ class FirmwareWrapper(BaseController):
     def sendStopCmd(self):
         """Adds a stop command to command processing queue.
         """
+        self.use_setpoint = True
         self.command_queue += [['_sendStopCmd', []]]
     def _sendStopCmd(self):
         print(f"INFO_{self.tick}: Stop command sent.")
@@ -658,6 +668,7 @@ class FirmwareWrapper(BaseController):
             duration_s (float): length of manuever
             relative (bool): whether setpoint is relative to CF's current position
         """
+        self.use_setpoint = True
         self.command_queue += [['_sendGotoCmd', [pos, yaw, duration_s, relative]]]
     def _sendGotoCmd(self, pos, yaw, duration_s, relative):
         print(f"INFO_{self.tick}: Go to command sent.")
