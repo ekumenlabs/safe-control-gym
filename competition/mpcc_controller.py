@@ -844,24 +844,142 @@ class MPCCController():
                 self.solver.acados_ocp.model.x.size(1))
 
 
+def generate_mpcc_controller():
+    from planning import plan_time_optimal_trajectory_through_gates, State, Limits, Cylinder, to_pose
+
+    START_POSE = [-0.9, -2.9, 0.03]
+    TAKE_OFF_HEIGHT = 0.4
+    EVENLY_SPACED_SEGMENTS = 90
+    ARC_PARAMETRIZATION_TOLERANCE = 1e-4
+    GOAL_POSE = [-0.5, 2.9, 0.75]
+
+    GATE_DIMENSIONS = {
+        "tall": {
+            "shape": "square",
+            "height": 1.,
+            "edge": 0.45
+        },
+        "low": {
+            "shape": "square",
+            "height": 0.525,
+            "edge": 0.45
+        }
+    }
+    GATE_POSES = [
+       [0.5, -2.5, 0, 0, 0, -1.57, 0],
+       [2, -1.5, 0, 0, 0, 0, 1],
+       [0, 0.2, 0, 0, 0, 1.57, 1],
+       [-0.5, 1.5, 0, 0, 0, 0, 0]]
+    OBSTACLE_DIMENSIONS = {
+        "shape": "cylinder",
+        "height": 1.05,
+        "radius": 0.05
+    }
+    OBSTACLE_POSES = [
+      [0.5, -1, 0, 0, 0, 0],
+      [1.5, 0, 0, 0, 0, 0],
+      [-1, 0, 0, 0, 0, 0]
+    ]
+
+    # Determine waypoints
+    air_start_pos = (START_POSE[0], START_POSE[1], TAKE_OFF_HEIGHT)
+
+    def calculate_gate_pos(x, y, yaw, type):
+        tall_gate_height = GATE_DIMENSIONS["tall"]["height"]
+        low_gate_height = GATE_DIMENSIONS["low"]["height"]
+        height = tall_gate_height if type == 0 else low_gate_height
+        return (x, y, height, 0, 0, yaw)
+
+    gates = []
+    rotation_offset = 1.57
+    for gate in GATE_POSES:
+        gates.append(
+            calculate_gate_pos(
+                x=gate[0],
+                y=gate[1],
+                    yaw=gate[5] + rotation_offset,
+                    type=gate[6]),
+            )
+
+    obstacle_height = OBSTACLE_DIMENSIONS["height"]
+    obstacle_radius = OBSTACLE_DIMENSIONS["radius"]
+
+    obstacles = []
+    for obstacle in OBSTACLE_POSES:
+        obstacles.append(
+            Cylinder(obstacle[0:3], radius=obstacle_radius, height=obstacle_height))
+
+    print("Calculating best path through gates, may take a few seconds...")
+
+    path = plan_time_optimal_trajectory_through_gates(
+        initial_state=State(
+            position=np.array(air_start_pos),
+            velocity=np.zeros(3)),
+        final_state=State(
+            position=np.array(GOAL_POSE),
+            velocity=np.zeros(3)),
+        gate_poses=list(map(to_pose, gates)),
+        acceleration_limits=Limits(
+            lower=-1 * np.ones(3),
+            upper=1 * np.ones(3),
+        ),
+        velocity_limits=Limits(
+            lower=np.array([0.05, -np.pi/6, -np.pi/6]),
+            upper=np.array([2.00, np.pi/6, np.pi/6]),
+        ),
+        num_cone_samples=3,
+        obstacles=obstacles,
+    )
+
+    waypoint_pos = []
+    waypoint_arg = []
+    waypoint_marks = []
+    for length, position, landmarks in path.evenly_spaced_points(
+        EVENLY_SPACED_SEGMENTS, ARC_PARAMETRIZATION_TOLERANCE
+    ):
+        waypoint_pos.append(position)
+        waypoint_arg.append(length)
+        waypoint_marks.append(landmarks)
+
+    waypoint_arg = np.array(waypoint_arg)
+    waypoint_pos = np.array(waypoint_pos)
+
+    controller = MPCCController(
+        dt=1/30,
+        mass=0.027,
+        ixx=1.4e-5,
+        iyy=1.4e-5,
+        izz=2.17e-5,
+        mpcc_horizon_len=20
+    )
+
+    controller.setup(
+        waypoints=waypoint_pos,
+        contour_poses=waypoint_arg,
+        landmarks=waypoint_marks,
+    )
+
+
 if __name__ == '__main__':
-    uut = MPCCController(0.1)
-    uut.reset()
+    generate_mpcc_controller()
 
-    print(uut._build_discrete_system_model())
-    print(uut._build_extended_mpcc_system())
-    print(uut._build_mpcc_cost_term_function())
-    print(uut._build_full_mpcc_target_system())
+    # uut = MPCCController(0.1)
+    # uut.reset()
 
-    waypoints = [(1, 2, 3), (4, 5, 6), (7, 8, 9), (1, 2, 3)]
-    contour_poses = [-1, 0, 1, 2]
+    # print(uut._build_discrete_system_model())
+    # print(uut._build_extended_mpcc_system())
+    # print(uut._build_mpcc_cost_term_function())
+    # print(uut._build_full_mpcc_target_system())
 
-    print(uut._build_mpcc_build_contour_interpolant_functions(
-        waypoints, contour_poses
-    ))
+    # waypoints = [(1, 2, 3), (4, 5, 6), (7, 8, 9), (1, 2, 3)]
+    # contour_poses = [-1, 0, 1, 2]
 
-    obs = [0] * 12
+    # print(uut._build_mpcc_build_contour_interpolant_functions(
+    #     waypoints, contour_poses
+    # ))
 
-    uut.setup(waypoints, contour_poses)
+    # obs = [0] * 12
 
-    print(uut.solve(obs))
+    # uut.setup(waypoints, contour_poses)
+
+    # print(uut.solve(obs))
