@@ -182,10 +182,10 @@ def run(test=False):
                 firmware_wrapper.sendStopCmd()
             elif command_type == Command.GOTO:
                 firmware_wrapper.sendGotoCmd(*args)
+            elif command_type == Command.NOTIFYSETPOINTSTOP :
+                firmware_wrapper.notifySetpointStop()
             elif command_type == Command.CURVE:
                 firmware_wrapper.sendFollowCurve(*args)
-            elif command_type == Command.NOTIFYSETPOINTSTOP:
-                firmware_wrapper.notifySetpointStop()
             elif command_type == Command.NONE:
                 pass
             else:
