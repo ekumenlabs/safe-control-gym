@@ -20,7 +20,7 @@ class Command(Enum):
     FINISHED = -1 # Args: None (exits the control loop)
     NONE = 0 # Args: None (do nothing)
 
-    FULLSTATE = 1 # Args: [pos, vel, acc, yaw, rpy_rate] 
+    FULLSTATE = 1 # Args: [pos, vel, acc, yaw, rpy_rate]
         # https://crazyswarm.readthedocs.io/en/latest/api.html#pycrazyswarm.crazyflie.Crazyflie.cmdFullState
     TAKEOFF = 2 # Args: [height, duration]
         # https://crazyswarm.readthedocs.io/en/latest/api.html#pycrazyswarm.crazyflie.Crazyflie.takeoff
@@ -34,6 +34,8 @@ class Command(Enum):
     NOTIFYSETPOINTSTOP = 6 # Args: None
         # Must be called to transfer drone state from low level control (cmdFullState) to high level control (takeoff, land, goto)
         # https://crazyswarm.readthedocs.io/en/latest/api.html#pycrazyswarm.crazyflie.Crazyflie.notifySetpointsStop
+
+    CURVE = 7 # Args: None
 
 
 class PIDController():
