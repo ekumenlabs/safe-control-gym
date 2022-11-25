@@ -446,98 +446,31 @@ class MPCCController():
             np.min(contour_poses), np.max(contour_poses), len(waypoints))
 
         waypoints_array = np.array(waypoints)
+        contour_array = np.array(contour_poses)
 
         waypoints_x = waypoints_array[:, 0]
         waypoints_y = waypoints_array[:, 1]
         waypoints_z = waypoints_array[:, 2]
 
-        x = symbols('x')
-        y = symbols('y')
-        z = symbols('z')
+        waypoints_x = waypoints_array[:, 0]
+        waypoints_y = waypoints_array[:, 1]
+        waypoints_z = waypoints_array[:, 2]
 
-        s_x = interpolating_spline(3, x, spline_support, waypoints_x)
-        s_y = interpolating_spline(3, y, spline_support, waypoints_y)
-        s_z = interpolating_spline(3, z, spline_support, waypoints_z)
+        # Contour_pose
+        cp = cs.MX.sym('cp', 4, 1)
+        x = cs.MX.sym('x', 1, 1)
 
-        # Appended as [greater than, lower than] for piecewise function
-        conditions_x = []
-        conditions_y = []
-        conditions_z = []
+        interpol_path_theta = cs.interpolant("interpol_spline_x", "bspline", [contour_array])
+        interp_exp = interpol_path_theta(theta, cp)
+        interp_fun = cs.Function('interp_fun', [theta, cp], [interp_exp])
 
-        functions_x = []
-        functions_y = []
-        functions_z = []
-
-        # Getting piecewise functions from the interpolation
-        for i in range(len(s_x.args)):
-            piece_cond = s_x.args[i].cond
-            greater = piece_cond.args[0]
-            lower = piece_cond.args[1]
-            conditions_x.append([greater.args[1], lower.args[1]])
-            piece_expr = s_x.args[i].expr
-            piece_pol = poly(piece_expr)
-            functions_x.append(piece_pol.all_coeffs())
-
-        for i in range(len(s_y.args)):
-            piece_cond = s_y.args[i].cond
-            greater = piece_cond.args[0]
-            lower = piece_cond.args[1]
-            conditions_y.append([greater.args[1], lower.args[1]])
-            piece_expr = s_y.args[i].expr
-            piece_pol = poly(piece_expr)
-            functions_y.append(piece_pol.all_coeffs())
-
-        for i in range(len(s_z.args)):
-            piece_cond = s_z.args[i].cond
-            greater = piece_cond.args[0]
-            lower = piece_cond.args[1]
-            conditions_z.append([greater.args[1], lower.args[1]])
-            piece_expr = s_z.args[i].expr
-            piece_pol = poly(piece_expr)
-            functions_z.append(piece_pol.all_coeffs())
-
-        pol_funcs_x = []
-        for i in range(len(functions_x)):
-            # Casadi function
-            pol_funcs_x.append(cs.Function(
-                'pol_fun_x',
-                [theta],
-                [float(functions_x[i][0])*theta**3 + float(functions_x[i][1])*theta**2 + float(functions_x[i][2])*theta + float(functions_x[i][3])])
-            )
-
-        pol_funcs_y = []
-        for i in range(len(functions_y)):
-            # Casadi function
-            pol_funcs_y.append(cs.Function(
-                'pol_fun_y',
-                [theta],
-                [float(functions_y[i][0])*theta**3 + float(functions_y[i][1])*theta**2 + float(functions_y[i][2])*theta + float(functions_y[i][3])])
-            )
-
-        pol_funcs_z = []
-        for i in range(len(functions_z)):
-            # Casadi function
-            pol_funcs_z.append(cs.Function(
-                'pol_fun_z',
-                [theta],
-                [float(functions_z[i][0])*theta**3 + float(functions_z[i][1])*theta**2 + float(functions_z[i][2])*theta + float(functions_z[i][3])])
-            )
-
-        # We have here a list containing all the polys for X, Y and Z curves
-        contour_curve_poly = cs.vertcat(functions_x[0](
-            theta), functions_y[0](theta), functions_z[0](theta))
-
-        contour_curve_derivative_poly = cs.jacobian(contour_curve_poly, theta)
-        contour_tangent_poly = contour_curve_derivative  # READ ABOVE
-
-
-        contour_curve_function_poly = cs.Function(
-            'contour_curve_function_poly',
-            [theta],
-            [contour_curve_poly, contour_tangent_poly],
-            ['theta'],
-            ['contour_curve_poly', 'contour_tangent_poly'])
-
+        # For the interpolation we would need to pass the theta value and the waypoints
+        # for each specific curve. This will be available after calling genetare_code()
+            # x_test = 1
+            # y_test = interp_fun(x_test, waypoints_x)
+            # print(y_test)
+        # If needed below curves can be generated with its waypoints and the above interpolant
+        # Similar case for contour_curve and contour_curve_derivative
 
         contour_f_x = cs.interpolant(
             'contour_f_x', 'bspline', [spline_support], waypoints_x)
